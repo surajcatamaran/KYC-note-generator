@@ -1,3 +1,4 @@
 google-genai
 streamlit
 fpdf2
+tenacity
