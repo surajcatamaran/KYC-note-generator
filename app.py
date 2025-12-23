@@ -1,66 +1,116 @@
 import streamlit as st
 import google.generativeai as genai
+from fpdf import FPDF
+import io
 
-# 1. Setup Gemini Pro (API Key from Streamlit Secrets)
-# For local testing, you can temporarily replace st.secrets with your actual key: "YOUR_KEY"
+# --- 1. CONFIG & SETUP ---
+st.set_page_config(page_title="Catamaran KYC note generator", layout="wide")
+
+# Setup Gemini API (Securely via Secrets)
 try:
-    api_key = st.secrets["GEMINI_API_KEY"]
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 except:
-    api_key = "PASTE_YOUR_API_KEY_HERE"
+    st.error("API Key not found. Please add GEMINI_API_KEY to your Secrets.")
 
-genai.configure(api_key=api_key)
-model = genai.GenerativeModel('gemini-2.5-flash')
+# Change this to your preferred model (e.g., gemini-1.5-pro or gemini-2.5-flash)
+MODEL_ID = "gemini-2.5-flash"
+model = genai.GenerativeModel(MODEL_ID)
 
-# 2. Load the Public Companies List
-try:
-    with open("companies.txt", "r", encoding="utf-8") as f: # Added encoding here
-        public_companies = [line.strip() for line in f.readlines()]
-except FileNotFoundError:
-    public_companies = ["Reliance Industries", "TCS", "HDFC Bank"]
 
-# 3. Load your 5-page prompt template
-try:
-    with open("prompt_template.txt", "r", encoding="utf-8") as f: # Added encoding here
-        detailed_instructions = f.read()
-except FileNotFoundError:
-    detailed_instructions = "Analyze this company: {company_name}"
+# --- 2. DATA LOADING ---
+def load_data():
+    try:
+        with open("companies.txt", "r", encoding="utf-8") as f:
+            public_companies = [line.strip() for line in f.readlines()]
+    except:
+        public_companies = ["Reliance Industries", "TCS", "HDFC Bank"]
 
-st.set_page_config(page_title="KYC Intelligence Tool", layout="wide")
+    try:
+        with open("prompt_template.txt", "r", encoding="utf-8") as f:
+            template = f.read()
+    except:
+        template = "Prepare a KYC for {company_name}."
+    return public_companies, template
+
+
+public_companies, prompt_template = load_data()
+
+
+# --- 3. PDF GENERATOR HELPER ---
+def generate_pdf(text, company_name):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+
+    # Title
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(0, 10, f"KYC Report: {company_name}", ln=True, align='C')
+    pdf.ln(10)
+
+    # Content
+    pdf.set_font("Arial", size=12)
+    # multi_cell handles line breaks and long text automatically
+    pdf.multi_cell(0, 10, text)
+
+    # Return as bytes
+    return pdf.output(dest='S').encode('latin-1', 'replace')
+
+
+# --- 4. USER INTERFACE ---
 st.title("🇮🇳 Indian Company KYC Intelligence")
 
-# STEP 1: Choose Company Type
-company_type = st.radio(
-    "Select the type of company:",
-    ["Indian Public Listed Company", "Indian Private Company"],
-    index=0
-)
+# Choice of Company Type
+company_type = st.radio("Select Category:", ["Listed Company", "Private Company"])
 
-# STEP 2: Conditional Input Interface
-selected_company = ""
-if company_type == "Indian Public Listed Company":
-    selected_company = st.selectbox(
-        "Search and select a listed company:",
-        options=public_companies,
-        index=None,
-        placeholder="Type name (e.g., Reliance, TCS...)"
-    )
+if company_type == "Listed Company":
+    selected_company = st.selectbox("Search listed company:", options=public_companies, index=None)
 else:
-    selected_company = st.text_input(
-        "Enter the name of the Private Company:",
-        placeholder="Type the full company name here..."
-    )
+    selected_company = st.text_input("Enter private company name:")
 
-# STEP 3: Generate KYC Note
+# NEW: File Uploader Component
+st.subheader("📁 Supporting Documents")
+uploaded_file = st.file_uploader("Upload DRHP, Financials, or Reports (PDF/JPG/PNG):",
+                                 type=["pdf", "png", "jpg", "jpeg"])
+
+# --- 5. GENERATION LOGIC ---
 if selected_company:
     if st.button(f"Generate KYC Note for {selected_company}"):
-        with st.spinner("Applying 5-page research framework..."):
-            # Insert the company name into your prompt
-            final_prompt = detailed_instructions.format(company_name=selected_company)
+        with st.spinner("Analyzing data and uploaded files..."):
 
-            # Call Gemini Pro
-            response = model.generate_content(final_prompt)
+            # Prepare Prompt
+            final_prompt = prompt_template.replace("{company_name}", selected_company)
 
-            # Display result
-            st.divider()
-            st.subheader(f"Final Report: {selected_company}")
-            st.markdown(response.text)
+            # Prepare Content (Text + File if available)
+            contents = [final_prompt]
+            if uploaded_file is not None:
+                # Get file bytes and mime type for Gemini
+                file_data = uploaded_file.getvalue()
+                contents.append({
+                    "mime_type": uploaded_file.type,
+                    "data": file_data
+                })
+
+            # Call AI
+            try:
+                response = model.generate_content(contents)
+                # Store result in session state so the download button can see it
+                st.session_state["kyc_result"] = response.text
+                st.session_state["current_company"] = selected_company
+            except Exception as e:
+                st.error(f"Error calling AI: {e}")
+
+# --- 6. DISPLAY & DOWNLOAD ---
+if "kyc_result" in st.session_state:
+    st.divider()
+
+    # Download Button at the top of results
+    pdf_bytes = generate_pdf(st.session_state["kyc_result"], st.session_state["current_company"])
+    st.download_button(
+        label="📄 Download the note as PDF",
+        data=pdf_bytes,
+        file_name=f"KYC_{st.session_state['current_company'].replace(' ', '_')}.pdf",
+        mime="application/pdf"
+    )
+
+    st.subheader(f"Report for {st.session_state['current_company']}")
+    st.markdown(st.session_state["kyc_result"])
