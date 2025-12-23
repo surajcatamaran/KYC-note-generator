@@ -33,7 +33,7 @@ except Exception:
     st.error("⚠️ GEMINI_API_KEY missing. Update your Streamlit Cloud Secrets.")
 
 # Gemini 3 Deep Research Agent Identifier
-RESEARCH_AGENT = 'deep-research-pro-preview-12-2025'
+RESEARCH_AGENT = 'deep-research-flash-preview-12-2025'
 
 
 # --- 3. DATA LOADING ---
