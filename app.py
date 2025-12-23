@@ -22,7 +22,7 @@ except:
     st.error("⚠️ GEMINI_API_KEY missing in Streamlit Secrets.")
 
 # CORRECT AGENT ID: There is no 'flash' version of Deep Research
-RESEARCH_AGENT = 'gemini-3-flash'
+RESEARCH_AGENT = 'deep-research-pro-preview-12-2025'
 
 
 # Retry logic to handle the 429 'Quota Exceeded' errors
