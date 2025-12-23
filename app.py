@@ -15,7 +15,7 @@ st.markdown("""
 
 # --- 2. INITIALIZE CLIENT ---
 try:
-    # Google GenAI SDK (2025 Standard)
+    # Use the new Google GenAI SDK Client
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 except Exception:
     st.error("⚠️ GEMINI_API_KEY missing. Please check your Streamlit Cloud Secrets.")
@@ -70,14 +70,14 @@ if target:
                     background=True
                 )
 
-                # 2. Polling Loop with fixed attribute (.status)
+                # 2. Polling Loop
                 while True:
-                    # Retrieve latest status
                     res = client.interactions.get(id=interaction.id)
 
-                    # FIX: Correct attribute is .status, not .state
+                    # FIX: Access .status and .outputs correctly
                     if res.status == "completed":
-                        st.session_state["kyc_note"] = res.output
+                        # The final text is in the last item of the outputs list
+                        st.session_state["kyc_note"] = res.outputs[-1].text
                         st.session_state["target_name"] = target
                         status.update(label="Intelligence Synthesis Complete!", state="complete")
                         break
@@ -86,13 +86,12 @@ if target:
                         break
 
                     status.write("Agent is browsing web sources and synthesizing findings...")
-                    # Delay to avoid 429 errors even on Tier 1
+                    # Delay to stay within Tier 1 polling limits
                     time.sleep(20)
 
             except Exception as e:
                 if "429" in str(e):
-                    st.error(
-                        "🛑 **Quota Limit:** Even on Tier 1, Deep Research has limits. Please wait 1 minute and try again.")
+                    st.error("🛑 **Quota Limit:** Your Tier 1 limits are being calibrated. Please wait a few minutes.")
                 else:
                     st.error(f"⚠️ Interaction Error: {e}")
 
@@ -115,4 +114,6 @@ if "kyc_note" in st.session_state:
             mime="application/pdf"
         )
     st.markdown("---")
+    # Display results in a clean container
+    st.markdown(f"### Report for {st.session_state['target_name']}")
     st.markdown(st.session_state["kyc_note"])
